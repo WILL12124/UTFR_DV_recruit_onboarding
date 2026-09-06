@@ -3,6 +3,9 @@
 Read [INSTRUCTIONS.md](./INSTRUCTIONS.md) for the full problem statement
 before touching any code.
 
+See [DEPENDENCIES.md](./DEPENDENCIES.md) for compiler and CMake setup on
+Linux, macOS, and Windows.
+
 ## Quick start
 
 ```
