@@ -8,23 +8,51 @@
 
 namespace {
 
-// Scatters `count` points at a random angle and random radius around
-// (originX, originY) - i.e. anywhere in a full circle around the car, not
-// just in front of it. Fixed seed -> reproducible track across runs.
+// Scatters `count` points randomly around (originX, originY) within maxRadius.
+// Two constraints are enforced via rejection sampling:
+//   - every point is at least carClearance metres from the car
+//   - every point is at least minSpacing metres from every other placed point
 std::vector<Point> scatterPointsAround(double originX, double originY, int count,
-                                        double minRadius, double maxRadius,
+                                        double maxRadius,
+                                        double carClearance,
+                                        double minSpacing,
                                         unsigned seed) {
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> angleDist(0.0, 2.0 * kPi);
-    std::uniform_real_distribution<double> radiusDist(minRadius, maxRadius);
+    std::uniform_real_distribution<double> radiusDist(0.0, maxRadius);
+
+    const double carClearSq  = carClearance * carClearance;
+    const double minSpacingSq = minSpacing * minSpacing;
 
     std::vector<Point> pts;
     pts.reserve(static_cast<size_t>(count));
-    for (int i = 0; i < count; ++i) {
-        double angle = angleDist(rng);
+
+    // Cap retries per point to avoid an infinite loop if the area is too full.
+    const int kMaxAttempts = 100'000;
+    int attempts = 0;
+    while (static_cast<int>(pts.size()) < count && attempts < kMaxAttempts) {
+        ++attempts;
+        double angle  = angleDist(rng);
         double radius = radiusDist(rng);
-        pts.push_back({originX + radius * std::cos(angle),
-                       originY + radius * std::sin(angle)});
+        Point  c{originX + radius * std::cos(angle),
+                 originY + radius * std::sin(angle)};
+
+        // Must be at least carClearance from the car.
+        double dcx = c.x - originX;
+        double dcy = c.y - originY;
+        if (dcx * dcx + dcy * dcy < carClearSq) continue;
+
+        // Must be at least minSpacing from every already-placed point.
+        bool tooClose = false;
+        for (const auto& p : pts) {
+            double dx = c.x - p.x;
+            double dy = c.y - p.y;
+            if (dx * dx + dy * dy < minSpacingSq) { tooClose = true; break; }
+        }
+        if (tooClose) continue;
+
+        pts.push_back(c);
+        attempts = 0;  // reset on a successful placement
     }
     return pts;
 }
@@ -34,30 +62,30 @@ std::vector<Point> scatterPointsAround(double originX, double originY, int count
 std::vector<Track> generateBenchmarkTracks() {
     std::vector<Track> tracks;
 
-    // Track 1: 15 points, car at origin facing +x (heading 0 rad / 0 deg).
+    // Track 1: 15 points, car at origin facing +x (0 rad).
     {
         Track t;
-        t.name = "track_1";
-        t.car = {0.0, 0.0, 0.0};
-        t.points = scatterPointsAround(t.car.x, t.car.y, 15, 3.0, 25.0, 101);
+        t.name   = "track_1";
+        t.car    = {0.0, 0.0, 0.0};
+        t.points = scatterPointsAround(t.car.x, t.car.y, 15, 15.0, 1.5, 3.0, 101);
         tracks.push_back(std::move(t));
     }
 
-    // Track 2: 50 points, car at (-5, -5) facing +y (heading pi/2 rad / 90 deg).
+    // Track 2: 50 points, car at (-5, -5) facing +y (pi/2 rad).
     {
         Track t;
-        t.name = "track_2";
-        t.car = {-5.0, -5.0, kPi / 2.0};
-        t.points = scatterPointsAround(t.car.x, t.car.y, 50, 3.0, 35.0, 202);
+        t.name   = "track_2";
+        t.car    = {-5.0, -5.0, kPi / 2.0};
+        t.points = scatterPointsAround(t.car.x, t.car.y, 50, 25.0, 1.5, 3.0, 202);
         tracks.push_back(std::move(t));
     }
 
-    // Track 3: 500 points, car at (-7, 10) facing heading = -1 rad (~-57.3 deg).
+    // Track 3: 500 points, car at (-7, 10) facing -1 rad (~-57°).
     {
         Track t;
-        t.name = "track_3";
-        t.car = {-7.0, 10.0, -1.0};
-        t.points = scatterPointsAround(t.car.x, t.car.y, 500, 3.0, 60.0, 303);
+        t.name   = "track_3";
+        t.car    = {-7.0, 10.0, -1.0};
+        t.points = scatterPointsAround(t.car.x, t.car.y, 500, 60.0, 1.5, 3.0, 303);
         tracks.push_back(std::move(t));
     }
 

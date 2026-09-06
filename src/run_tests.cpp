@@ -7,6 +7,10 @@
 #include "tests.hpp"
 #include "track_generator.hpp"
 
+// Must match the hard constraints in solution.cpp.
+static constexpr double kMaxStepDist = 10.0;
+static constexpr double kConeHalfDeg = 30.0;
+
 int main() {
     std::cout << "=== UTFR Driverless Final Project: Cone Path Traversal ===\n\n";
 
@@ -16,31 +20,34 @@ int main() {
     auto tracks = generateBenchmarkTracks();
 
     int passedChecks = sanityPass ? 1 : 0;
-    int totalChecks = 1;
+    int totalChecks  = 1;
 
     for (const auto& track : tracks) {
         std::cout << "--- " << track.name << " (" << track.points.size() << " points) ---\n";
 
         auto startTime = std::chrono::high_resolution_clock::now();
         std::vector<Point> path = buildPath(track.points, track.car);
-        auto endTime = std::chrono::high_resolution_clock::now();
+        auto endTime   = std::chrono::high_resolution_clock::now();
         double ms = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
-        bool lengthOk = testLengthCheck(track.points, track.car, path);
+        bool lengthOk = testLengthCheck(track.points, track.car, path,
+                                        kMaxStepDist, kConeHalfDeg);
+        bool stepOk   = testMaxStepLength(track.car, path, kMaxStepDist);
         double curviness = computeCurviness(track.car, path);
 
         std::cout << "[Test C] Curviness score: " << std::fixed << std::setprecision(4)
                   << curviness << " (0 = straight, 1 = max curvy)\n";
         std::cout << "[Info]   Runtime: " << std::fixed << std::setprecision(3) << ms << " ms\n";
-        std::cout << "[Info]   Path length: " << path.size() << " / " << track.points.size()
-                  << " points used\n";
+        std::cout << "[Info]   Path length: " << path.size() << " / "
+                  << track.points.size() << " points used\n";
 
         std::string svgName = track.name + "_plot.svg";
         writeSvgPlot(svgName, track.points, path, track.car);
         std::cout << "[Info]   Plot written to " << svgName << "\n";
 
-        ++totalChecks;
+        totalChecks  += 2;
         if (lengthOk) ++passedChecks;
+        if (stepOk)   ++passedChecks;
         std::cout << "\n";
     }
 

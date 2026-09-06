@@ -8,32 +8,34 @@ You're given:
 - The car's current state: position `(x, y)` and heading
 
 Your job: write a function that builds a path through as many of those points
-as it can, starting from the car and always moving forward, that is also as
-short and as straight as you can reasonably make it.
+as it can, starting from the car and always moving forward, subject to two hard
+constraints on every step.
 
 Concretely:
 
 1. Start at the car's position and heading.
-2. Find the next point that lies ahead of your current direction of travel.
-3. Move to it. Your direction of travel now points from where you just were
-   to where you just went.
-4. Repeat, extending the path forward, until nothing is left ahead of you.
+2. Find the nearest point that satisfies **both** constraints below.
+3. Move to it. Your heading now points from where you just were to where you
+   just went.
+4. Repeat until no valid next point exists.
 5. Return the points in the order you visited them.
 
-There's no single "correct" path here - this is a real path-planning
-problem, not a puzzle with one right answer. The test runner checks a few
-properties any reasonable solution should have (below), and reports a
-runtime and a curviness score so you can see the shape of the trade-off
-you're making.
+### Hard constraints on every step
+
+| Constraint | Value |
+|------------|-------|
+| **Max step distance** | The next point must be ≤ **10 m** from your current position. |
+| **Heading cone** | The next point must lie within **±30°** of your current heading. |
+
+Both must hold simultaneously. If no candidate satisfies both, the path ends.
 
 ## What "ahead" means
 
 Heading is in radians, using the standard math convention: 0 radians points
-along `+x`, and the angle increases counter-clockwise (so `pi/2` points
-along `+y`). A point is "ahead" of your current position and heading if it
-lies in the half-plane your heading vector points into - don't assume that
-means "larger x". It depends entirely on your current heading, which
-changes every time you move.
+along `+x`, and the angle increases counter-clockwise (so `pi/2` points along
+`+y`). Within the heading cone means the angle between your heading vector and
+the vector to the candidate point is ≤ 30°, equivalently the normalised dot
+product (cosine) is ≥ cos(30°) ≈ 0.866.
 
 ## What you're implementing
 
@@ -43,14 +45,12 @@ Everything you need to touch lives in `src/solution.cpp`:
 std::vector<Point> buildPath(const std::vector<Point>& points, const CarState& car);
 ```
 
-- `points` - the full candidate list. Points not in your path may be
-  behind the car, off to the side, or just unreachable in an all-forward
-  path.
-- `car` - starting `x`, `y`, `heading` (radians).
-- Return value - the ordered sequence of points making up your path.
+- `points` — the full candidate list.
+- `car` — starting `x`, `y`, `heading` (radians).
+- Return value — the ordered sequence of points making up your path.
   Don't include the car's own starting position in the returned vector.
 
-Don't change the function signature - the test runner calls it directly
+Don't change the function signature — the test runner calls it directly
 and won't compile if you do.
 
 ## Building and running
@@ -64,42 +64,42 @@ cmake --build .
 
 ## What the test runner checks
 
-**Test A - Forward sanity.** A small, hand-built case where every point is
-already directly ahead of the last. If your algorithm can't pass this,
-nothing else will work - start here.
+**Test A — Forward sanity.** A small, hand-built case where every point is
+directly ahead of the last, 2 m apart and exactly on-axis. Both hard
+constraints are satisfied by construction. If your algorithm can't pass
+this, start here.
 
-**Test B - Length check.** Runs on all three benchmark tracks. Confirms
-your path didn't stop early: for every point *not* in your path, checks
-that it isn't sitting ahead of your path's last segment. If it is, your
-path quit too soon.
+**Test B — Length check.** Runs on all three benchmark tracks. For every
+point *not* in your path, checks that it isn't reachable from the path's
+endpoint under the algorithm's own constraints (within 5 m **and** within
+±30° of the final heading). If one is, your path quit too soon.
 
-**Test C - Curviness score.** Not pass/fail - a number from 0 (perfectly
-straight) to 1 (the path reverses direction on every segment), averaged
-over all the turns in your path. A shorter, straighter path scores closer
-to 0.
+**Test C — Curviness score.** Not pass/fail — a number from 0 (perfectly
+straight) to 1 (path reverses direction on every segment), averaged over
+all turns. A straighter path scores closer to 0.
+
+**Test D — Max step length.** Hard constraint check: every consecutive pair
+of points in the path (including the car-to-first-point step) must be
+within 10 m of each other.
 
 **Runtime.** Wall-clock time for `buildPath` on each track, printed in
-milliseconds. Track 3 has 500 points - this is where an inefficient
-approach (e.g. rescanning every remaining point from scratch, over and
-over) starts to show.
+milliseconds.
 
 ## The three benchmark tracks
 
-| Track   | Points | Car start (x, y) | Car heading            |
-|---------|--------|-------------------|-------------------------|
-| Track 1 | 15     | (0, 0)            | 0 rad (0 deg)           |
-| Track 2 | 50     | (-5, -5)          | pi/2 rad (90 deg)       |
-| Track 3 | 500    | (-7, 10)          | -1 rad (~-57.3 deg)     |
+| Track   | Points | Car start (x, y) | Car heading         | Point radius |
+|---------|--------|-------------------|----------------------|--------------|
+| Track 1 | 15     | (0, 0)            | 0 rad (0°)          | 3–6 m        |
+| Track 2 | 50     | (-5, -5)          | π/2 rad (90°)       | 3–8 m        |
+| Track 3 | 500    | (-7, 10)          | -1 rad (~-57°)      | 3–10 m       |
 
-Points on every track are scattered randomly all the way around the car -
-not just in front of it - so part of the problem is figuring out which
-points are even usable before you start chaining them together.
+All points are scattered randomly in a full circle around the car start
+position (not just in front of it), so part of the problem is filtering
+to candidates that satisfy the cone and distance constraints.
 
 ## Reading the plots
 
-Every run of `./run_tests` writes an SVG file per track (`track_1_plot.svg`,
-`track_2_plot.svg`, `track_3_plot.svg`) - open them in a browser. Grey dots
-are the full candidate set, the dark marker is the car (with a short line
-showing its heading), and the red line is the path your code produced. The
-view auto-scales to the spread of that track's points, so a tight cluster
-of 15 points and a wide spread of 500 will each fill the frame.
+Every run writes one SVG per track (`track_1_plot.svg`, etc.) — open in a
+browser. Grey dots are the full candidate set, the dark marker is the car
+(with a short line showing its heading), and the red line is the path your
+code produced.
